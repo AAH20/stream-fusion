@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/stream-fusion-core",
+    "crates/stream-fusion-storage",
+    "crates/stream-fusion-flight",
+    "crates/stream-fusion-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Ahmed Hassan <ahmed.alaa.hassan25@gmail.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/AAH20/stream-fusion"
+
+[workspace.dependencies]
+tokio = { version = "1.38", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4.5", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+rand = "0.8"
+futures = "0.3"
+dashmap = "5.5"

@@ -1,0 +1,16 @@
+[package]
+name = "stream-fusion-flight"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+stream-fusion-core = { path = "../stream-fusion-core" }
+stream-fusion-storage = { path = "../stream-fusion-storage" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
