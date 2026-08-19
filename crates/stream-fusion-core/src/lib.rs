@@ -64,9 +64,19 @@ impl InvariantEvaluator {
         (now - row.timestamp).num_milliseconds().max(0)
     }
 
-    pub fn evaluate_conversion_delta(baseline_ctr: f64, current_staleness_ms: i64) -> f64 {
-        // Industry benchmark: every 1000ms feature lag degrades real-time ranking accuracy by ~0.3%
-        let degradation_factor = (current_staleness_ms as f64 / 1000.0) * 0.003;
+    /// Projects CTR degradation from feature staleness, linearly in
+    /// `staleness_per_1000ms_pct`.
+    ///
+    /// That rate is *not* a built-in "industry benchmark" — an earlier
+    /// version hardcoded 0.3%/second here with that label and no citation,
+    /// which was a fabricated authority claim: nothing in this crate
+    /// measured it, and no source was ever attached. It's a required
+    /// parameter now specifically so nobody can call the output of this
+    /// function precise without having supplied a real, defensible rate
+    /// themselves — from their own model's offline/online skew
+    /// measurements, not from this library.
+    pub fn evaluate_conversion_delta(baseline_ctr: f64, current_staleness_ms: i64, staleness_per_1000ms_pct: f64) -> f64 {
+        let degradation_factor = (current_staleness_ms as f64 / 1000.0) * (staleness_per_1000ms_pct / 100.0);
         (baseline_ctr * (1.0 - degradation_factor)).max(0.0)
     }
 }
@@ -92,7 +102,7 @@ mod tests {
         assert!(staleness >= 0);
 
         let baseline = 0.045; // 4.5% CTR
-        let simulated = InvariantEvaluator::evaluate_conversion_delta(baseline, 2000);
+        let simulated = InvariantEvaluator::evaluate_conversion_delta(baseline, 2000, 0.3);
         assert!(simulated < baseline);
     }
 }

@@ -2,13 +2,27 @@ use chrono::Utc;
 use dashmap::DashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use stream_fusion_core::{FeatureRow, FeatureValue, FusionError, Result};
+use stream_fusion_core::{FeatureRow, FusionError, Result};
+#[cfg(test)]
+use stream_fusion_core::FeatureValue;
 
-/// Lock-free, high-throughput in-memory feature store ring buffer.
+/// Concurrent, sharded in-memory feature store.
+///
+/// Backed by `DashMap`, which shards its internal state across multiple
+/// `RwLock`-guarded buckets — fast under concurrent access, but not
+/// lock-free in the formal sense (no wait-free, CAS-only progress
+/// guarantee). Calling it that would be a real overclaim, not a rounding
+/// error, so this doc deliberately doesn't.
+///
+/// Reads return `Arc<FeatureRow>`, not a cloned `FeatureRow` — `get`/
+/// `get_batch` clone the `Arc` (a pointer + refcount bump), not the
+/// underlying `HashMap<String, FeatureValue>` and `String` fields inside
+/// it. That's what makes "zero-copy on read" true here rather than
+/// aspirational: an earlier version of this store cloned the full row on
+/// every read, which was the opposite of the claim it shipped with.
 #[derive(Clone)]
 pub struct OnlineFeatureStore {
-    // Sharded concurrent map: entity_id -> FeatureRow
-    store: Arc<DashMap<String, FeatureRow>>,
+    store: Arc<DashMap<String, Arc<FeatureRow>>>,
     total_writes: Arc<AtomicU64>,
     total_reads: Arc<AtomicU64>,
 }
@@ -33,26 +47,28 @@ impl OnlineFeatureStore {
         let seq = self.total_writes.fetch_add(1, Ordering::SeqCst);
         row.sequence_num = seq;
         row.timestamp = Utc::now();
-        self.store.insert(row.entity_id.clone(), row);
+        self.store.insert(row.entity_id.clone(), Arc::new(row));
         Ok(())
     }
 
-    /// Retrieve a feature row for real-time model inference.
-    pub fn get(&self, entity_id: &str) -> Result<FeatureRow> {
+    /// Retrieve a feature row for real-time model inference. Clones an
+    /// `Arc` (pointer + refcount), not the row's contents.
+    pub fn get(&self, entity_id: &str) -> Result<Arc<FeatureRow>> {
         self.total_reads.fetch_add(1, Ordering::Relaxed);
         self.store
             .get(entity_id)
-            .map(|r| r.value().clone())
+            .map(|r| Arc::clone(r.value()))
             .ok_or_else(|| FusionError::NotFound(entity_id.to_string()))
     }
 
-    /// Batch retrieval for Two-Tower / Multi-Task candidate scoring.
-    pub fn get_batch(&self, entity_ids: &[&str]) -> Vec<Option<FeatureRow>> {
+    /// Batch retrieval for Two-Tower / Multi-Task candidate scoring. Same
+    /// Arc-clone-not-deep-clone behavior as `get`, per entity.
+    pub fn get_batch(&self, entity_ids: &[&str]) -> Vec<Option<Arc<FeatureRow>>> {
         entity_ids
             .iter()
             .map(|id| {
                 self.total_reads.fetch_add(1, Ordering::Relaxed);
-                self.store.get(*id).map(|r| r.value().clone())
+                self.store.get(*id).map(|r| Arc::clone(r.value()))
             })
             .collect()
     }
